@@ -367,7 +367,7 @@ class SceneFrames:
 class ButteraugliValue:
     Norm2: float
     Norm3: float
-    InifiniteNorm: float
+    NormInfinite: float
 
 @dataclass
 class MetricScore:
@@ -837,7 +837,7 @@ def calculate_metric_scores_average(metric_scores: list[MetricScore]) -> float:
             for row in metric_score.value:
                 for column in row:
                     if column is not None:
-                            subtotal = subtotal + column.InifiniteNorm if isinstance(column, ButteraugliValue) else column
+                            subtotal = subtotal + column.NormInfinite if isinstance(column, ButteraugliValue) else column
             
             subaverage = subtotal / (len(metric_score.value) * len(metric_score.value[0]))
             total = total + subaverage
