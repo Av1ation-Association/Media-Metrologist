@@ -1,52 +1,16 @@
 # Import Methods
 
-In order for Media Metrologist for read and decode video into individual frames for evaluation, at least 1 [VapourSynth plugin][vs-plugins] must be installed. In case 1 fails to decode the video, Media Metrologist will attempt to decode the video using the next method listed in the [Configuration](./Configuration.md) for the given [video input](./Configuration.md#video-inputs). As necessary functionality provided by [VapourSynth plugins][vs-plugins], there are currently 4 options to choose from:
+In order for Media Metrologist for read and decode video into individual frames for evaluation, at least 1 [VapourSynth plugin][vs-plugins] must be installed. In case a method fails to decode the video, Media Metrologist will attempt to decode the video using the next method listed in the [Configuration](./Configuration.md) for the given [video input](./Configuration.md#video-inputs). There are currently 4 methods supported:
 
-* [FFmpegSource][ffms2]
-* [BestSource][bestsource]
-* [DGDecodeNV][dgdecnv]
-* [L-SMASH-Works][lsmash]
+Method | Website
+--- | ---
+[FFmpegSource](./Import%20Methods/FFmpegSource.md) | [GitHub][ffms2]
+[BestSource](./Import%20Methods/BestSource.md) | [GitHub][bestsource]
+[DGDecodeNV](./Import%20Methods/DGDecodeNV.md) | [rationalqm.us][dgdecnv]
+[L-SMASH-Works](./Import%20Methods/L-SMASH-Works.md) | [GitHub][lsmash]
 
 > [!NOTE]
-> Not all methods work for every input and system hardware combination so Media Metrologist [Configuration](./Configuration.md) allows defining multiple methods per input to try in order to improve overall reliability.
-
-## FFmpegSource
-
-As of the release of version 5.0, FFmpegSource (FFMS2) is now recommended over the previously recommended [L-SMASH-Works](#l-smash-works) for improvements in speed and reliability. However, FFMS2 is not the most hardy solution for decoding video available.
-
-FFmpegSource also accepts the following options:
-
-Name | Type | Description
---- | --- | ---
-track | integer | The video track number to open, as seen by the relvant demuxer
-cache | boolean |
-cachefile | string |
-fpsnum | integer |
-fpsden | integer |
-threads | integer |
-timecodes | string |
-seekmode | integer |
-width | integer |
-height | integer |
-resizer | [`FFMS2Resizer`](./Import%20Methods/FFmpegSource.md#FFMS2Resizer) |
-format | integer |
-alpha | boolean |
-
-More information on FFmpegSource and documentation on the options can be found on their [repository][ffms2].
-
-## BestSource
-
-Most reliable but requires indexing the entire video
-
-
-## DGDecodeNV
-
-Requires a supported NVIDIA graphics processing unit and does not support all video codecs
-
-
-## L-SMASH-Works
-
-Quick to index video but has [issues with reliability](https://github.com/master-of-zen/Av1an/issues/745 "Chunk methods introduce image glitches")
+> Not all methods work for every input and system hardware combination so Media Metrologist [Configuration](./Configuration.md) allows defining multiple methods per input to better ensure inputs are imported successfully.
 
 
 [vs-plugins]: https://www.vapoursynth.com/doc/installation.html#plugins-and-scripts "Plugins and Scripts"

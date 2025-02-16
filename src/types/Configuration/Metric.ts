@@ -30,6 +30,9 @@ export type Metric<T extends keyof typeof MetricType | undefined = undefined> = 
     ? XPSNRMetric
     : BaseMetric;
 
+export type MetricValue = (number & tags.Type<'float'>);
+export type ButteraugliValue = { Norm2: (number & tags.Type<'float'> & tags.Minimum<0>); Norm3: (number & tags.Type<'float'> & tags.Minimum<0>); NormInfinite: (number & tags.Type<'float'> & tags.Minimum<0>); };
+
 interface BaseMetric {
     regions?: {
         rows: number & tags.Type<'int32'> & tags.Minimum<1>;
@@ -43,12 +46,12 @@ export type SSIMULACRAMetric = BaseMetric;
 export const SSIMULACRA2Implementation = {
     CUDA: 'cuda',
     HIP: 'hip',
-    ZIG: 'zig',
+    CPU: 'cpu',
 } as const;
 
 export interface SSIMULACRAMetric2 extends BaseMetric{
     /**
-     * Implementation to use. Can be 'cuda', 'hip', or 'zig'. If 'cuda' or 'hip' is unavailable, 'zig' will be used.
+     * Implementation to use. Can be 'cuda', 'hip', or 'cpu'. If 'cuda' or 'hip' is unavailable, 'cpu' will be used.
      * @enum {SSIMULACRA2Implementation}
      */
     implementation?: typeof SSIMULACRA2Implementation[keyof typeof SSIMULACRA2Implementation];
@@ -56,7 +59,19 @@ export interface SSIMULACRAMetric2 extends BaseMetric{
 
 export type VMAFMetric = BaseMetric;
 
+export const ButteraugliImplementation = {
+    CUDA: 'cuda',
+    HIP: 'hip',
+    CPU: 'cpu',
+} as const;
+
 export interface ButteraugliMetric extends BaseMetric {
+    /**
+     * Implementation to use. Can be 'cuda', 'hip', or 'cpu'. If 'cuda' or 'hip' is unavailable, 'cpu' will be used.
+     * @enum {ButteraugliImplementation}
+     */
+    implementation?: typeof ButteraugliImplementation[keyof typeof ButteraugliImplementation];
+
     /**
      * Viewing conditions screen nits.
      * @default 80

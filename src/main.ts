@@ -16,7 +16,11 @@ import {
     type SceneFrameScores,
     type Configuration,
 } from './types/Configuration/Configuration.js';
-import { MetricType } from './types/Configuration/Metric.js';
+import {
+    MetricType,
+    type MetricValue,
+    type ButteraugliValue,
+} from './types/Configuration/Metric.js';
 import {
     type Status,
     type ScoringStatus,
@@ -31,6 +35,25 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
 
     constructor(public config: Configuration, public readonly statuses: Status[] = [{ time: new Date(), state: State.Idle }]) {
         super();
+
+        // Config dates are strings, convert to Date objects
+        this.config.scenes = this.config.scenes.map(scene => ({
+            reference: scene.reference,
+            distorted: Object.entries(scene.distorted).reduce((distorted, [id, distortedConfig]) => {
+                distorted[id] = {
+                    ...distortedConfig,
+                    scores: Object.entries(distortedConfig.scores).reduce((scores, [metric, score]) => {
+                        scores[metric] = score.map(sceneFrameScore => ({
+                            ...sceneFrameScore,
+                            time: new Date(sceneFrameScore.time),
+                        }));
+                        return scores;
+                    }, {} as Configuration['scenes'][0]['distorted'][0]['scores']),
+                };
+
+                return distorted;
+            }, {} as Configuration['scenes'][0]['distorted']),
+        }));
 
         // If config has score data and statuses is empty, add status for each scored frame
         const validation = typia.validate<Configuration>(this.config);
@@ -92,7 +115,7 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                         formattedDistorted[id] = {
                             ...distorted,
                             scores: Object.entries(distorted.scores).reduce((scores, [metric, score]) => {
-                                scores[metric] = Array.from(score ?? []);
+                                scores[metric] = Array.from((score as unknown as number[]) ?? []);
                                 return scores;
                             }, {} as Configuration<'Array'>['scenes'][0]['distorted'][0]['scores']),
                         };
@@ -236,10 +259,16 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
         config.scenes.forEach(scene => {
             Object.entries(scene.distorted).forEach(([distortedId, distorted]) => {
                 Object.entries(distorted.scores).forEach(([metric, scores]) => {
-                    const scenesScores = scores.map(score => {
+                    const scenesScores = scores.map((score: SceneFrameScores | SceneFrameScores<ButteraugliValue>) => {
                         if (Array.isArray(score.value)) {
                             const allScores = score.value.flat();
-                            return allScores.reduce((sum, regionScore) => sum + regionScore, 0) / allScores.length;
+                            return allScores.reduce((sum, regionScore) => {
+                                if (metric === MetricType.Butteraugli) {
+                                    // Default to using NormInfinite - Consider using Norm2 when metric implementation is HIP/CUDA
+                                    return sum + (regionScore as ButteraugliValue).NormInfinite;
+                                }
+                                return sum + (regionScore as MetricValue);
+                            }, 0) / allScores.length;
                         } else {
                             return score.value;
                         }
@@ -293,28 +322,23 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
     // }
 
     public static CalculateFramerate(config: Configuration, metric?: keyof typeof MetricType) {
-        const sceneFramerates = config.scenes.reduce((sceneFramerates, scene) => {
-            const sceneFrames = Object.values(scene.distorted)
-                .reduce((allScores, distorted) => {
-                    if (metric) {
-                        return allScores.concat(distorted.scores[metric] ?? []);
-                    }
-                    return allScores.concat(Object.values(distorted.scores).reduce((metricScores, scores) => metricScores.concat(scores), []));
-                }, [] as SceneFrameScores[])
-                .sort((a, b) => a.time.getTime() - b.time.getTime());
+        const frameTimes = config.scenes
+            .reduce((frameTimes, scene) => {
+                Object.values(scene.distorted).forEach((distorted) => {
+                    Object.entries(distorted.scores).forEach(([sceneMetric, scores]: [metric: keyof typeof MetricType, scores: SceneFrameScores[]]) => {
+                        if (!metric || sceneMetric === metric) {
+                            frameTimes = frameTimes.concat(scores.map(score => score.time));
+                        }
+                    });
+                });
 
-            const firstCompleted = sceneFrames[0].time;
-            const lastCompleted = sceneFrames[sceneFrames.length - 1].time;
+                return frameTimes;
+            }, [] as Date[])
+            .sort((a, b) => a.getTime() - b.getTime());
 
-            const totalFrames = scene.reference.end - scene.reference.start;
-            const totalSeconds = (lastCompleted.getTime() - firstCompleted.getTime()) / 1000;
+        const totalSeconds = (frameTimes[frameTimes.length - 1].getTime() - frameTimes[0].getTime()) / 1000;
 
-            const framerate = totalFrames / totalSeconds;
-
-            return sceneFramerates.concat(framerate);
-        }, [] as number[]);
-
-        return sceneFramerates.reduce((average, framerate) => average + framerate, 0) / sceneFramerates.length;
+        return frameTimes.length / totalSeconds;
     }
 
     public get totalFrames() {
@@ -348,10 +372,6 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
     }
 
     public async measure() {
-        // Start WAMP server and listen for measurement updates
-        // Execute metrologist.vpy
-        // Stop WAMP server
-
         // Write config file to disk
         await fsp.writeFile(this.configPath, JSON.stringify(Metrologist.Serialize(this.config), null, 4));
         
@@ -360,7 +380,7 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
             this.childProcess = spawn(
                 'python',
                 [
-                    path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'metrologist.vpy'),
+                    path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'metrologist.py'),
                     this.configPath,
                 ],
                 {
@@ -401,7 +421,7 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                         this.config.scenes[sceneIndex].distorted[distortedId].scores[metric][frame] = {
                             time,
                             value: score.value,
-                        };
+                        } as SceneFrameScores;
     
                         // Add new status with the state 'scoring'
                         this.addStatus({

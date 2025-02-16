@@ -74,7 +74,7 @@ At least one input method must be installed in order to import video for evaluat
 * [DGDecodeNV][dgdecnv] - Requires a supported NVIDIA graphics processing unit and does not support all video codecs
 * [L-SMASH-Works][lsmash] - Quick to index video but has [issues with reliability](https://github.com/master-of-zen/Av1an/issues/745 "Chunk methods introduce image glitches")
 
-For more details, see the [Import Methods](./docs/Import%20Methods.md) documentation.
+For more details, see the [Import Methods](./Import%20Methods.md) documentation.
 
 ### Metrics
 
@@ -91,10 +91,13 @@ Metrics are evaluated using [VapourSynth plugins](https://www.vapoursynth.com/do
     * [VapourSynth Zig Image Process][vszip]
     * [vapoursynth-julek-plugin][julek]
 * [Butteraugli][butteraugli]
+    * [Vapoursynth-HIP][vship]
     * [vapoursynth-julek-plugin][julek]
 
 > [!NOTE]
 > Some plugins output differing results due to their implementations and may not be directly comparable.
+
+For more details, see the [Metrics](./Metrics.md) documentation.
 
 ### Scenes
 

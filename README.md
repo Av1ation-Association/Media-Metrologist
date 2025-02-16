@@ -1,19 +1,19 @@
 # Media Metrologist
 
-Measure video quality using a suite of metrics on a per-scene, per-frame, and per-region basis. Compare multiple encoded videos against a reference in a single operation. Track comparison data live as it's computed and generate quality reports per video, scene, and metric.
+Measure video quality using a suite of metrics on a per-scene and per-frame basis. Compare multiple encoded videos against a reference in a single operation. Track comparison data live as it's computed and generate quality reports per video, scene, and metric.
 
 ## Features
 
 * JSON [Configuration](./docs/Configuration.md) and rich typings via Typescript
 * Standalone [VapourSynth][vapoursynth] script: [Metrologist.vpy](./src/metrologist.vpy)
 * Support for either video file or [VapourSynth][vapoursynth] script paths as inputs
-* Support for several [VapourSynth][vapoursynth] video [import methods](./docs//Configuration.md#import-methods)
+* Support for several [VapourSynth][vapoursynth] video [import methods](./docs/Configuration.md#import-methods)
 * Compare multiple distorted videos against a reference video at once
 * Process multiple frame ranges defined as [scenes](./docs/Configuration.md#scenes) with the potential to trade accuracy for more speed
 * Compute as many [metrics](./docs/Configuration.md#metrics) as desired per scene
-* Split frames into a grid of regions with the potential for more spatial data
+* Split frames into a grid of regions for more spatial data
 * Realtime feedback on processing speed and computed scores
-* Resume processing only on scenes not yet measured
+* Progress is saved and can be resumed at any time
 * Simple statistics for each distorted video input and for each scene
 
 ## Getting Started
@@ -22,11 +22,11 @@ Media Metrologist is designed to be used with the upcoming graphical user interf
 
 ### VapourSynth (Python)
 
-1. Clone or download [metrologist.vpy](./src/metrologist.vpy)
+1. Clone or download [metrologist.py](./src/metrologist.py)
 2. Ensure [Prerequisites](#prerequisites) are met
 3. Create a JSON file adhering to [Configuration](./docs/Configuration.md)
-4. Execute [metrologist.vpy](./src/metrologist.vpy) with the JSON file
-    * `> python ./metrologist.vpy ./MyConfiguration.json`
+4. Execute [metrologist.py](./src/metrologist.py) with the JSON file
+    * `> python ./metrologist.py ./MyConfiguration.json`
 5. Read the updated JSON file for results as configured
 
 ### NodeJS

@@ -1,8 +1,10 @@
 import { type tags } from 'typia';
 import { type ImportMethod } from './Import.js';
 import {
-    type Metric,
+    type ButteraugliValue,
     type MetricType,
+    type Metric,
+    type MetricValue,
 } from './Metric.js';
 
 /**
@@ -43,9 +45,9 @@ export interface SceneFrames {
     end: number & tags.Type<'int32'> & tags.Minimum<0>;
 }
 
-export interface SceneFrameScores {
+export interface SceneFrameScores<T extends MetricValue | ButteraugliValue = MetricValue> {
     time: Date;
-    value: (number & tags.Type<'float'>)[][];
+    value: T[][];
 }
 
 /**
@@ -55,8 +57,8 @@ export interface Scene {
     reference: SceneFrames;
     distorted: {
         [id: string]: SceneFrames & {
-            scores: {
-                [P in keyof typeof MetricType]?: SceneFrameScores[];
+            scores: { 
+                [P in keyof typeof MetricType]?: SceneFrameScores<P extends typeof MetricType.Butteraugli ? ButteraugliValue : MetricValue>[];
             };
         };
     };

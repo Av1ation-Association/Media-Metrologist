@@ -1,4 +1,5 @@
 import argparse
+from asyncio import Task, run, create_task, gather, as_completed, to_thread
 from dataclasses import asdict, dataclass, is_dataclass
 import datetime
 from enum import Enum
@@ -8,7 +9,7 @@ import os
 import sys
 import subprocess
 import time
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 import vapoursynth
 from vapoursynth import core
 
@@ -183,10 +184,37 @@ class MetricType(Enum):
 
 @dataclass(frozen=True)
 class MetricRegions:
+    """
+    Define the regions of each frame to compute the metric
+
+    The entire frame is divided into a grid of regions by rows and columns.
+    Each region is a rectangular area with size of approximately (frame height / rows) x
+    (frame width / columns).
+
+    Attributes
+    ---
+        rows: int
+            The number of rows to divide the frame into.
+        columns: int
+            The number of columns to divide the frame into.
+    """
     rows: int
     columns: int
 
 class Metric:
+    """
+    Base class for all metrics
+    
+    Attributes
+    ---
+        regions: MetricRegions | None
+            The regions of each frame to compute the metric
+        
+    Methods
+    ---
+        __init__(self, regions: MetricRegions | None = None)
+            Initialize the metric with the given regions
+    """
     regions: MetricRegions | None
 
     def __init__(self, regions: MetricRegions | None = None):
@@ -194,24 +222,54 @@ class Metric:
 
 @dataclass(frozen=True)
 class PSNRMetric(Metric):
+    """
+    Peak signal-to-noise ratio (PSNR)
+
+    Attributes
+    ---
+        regions: MetricRegions | None
+            The regions of each frame to compute the metric
+    """
     pass
 
 class SSIMULACRAMetric(Metric):
+    """
+    SSIMULACRA - Structural SIMilarity Unveiling Local And Compression Related Artifacts ([SSIMULACRA](https://github.com/cloudinary/ssimulacra))
+
+    Attributes
+    ---
+        regions: MetricRegions | None
+            The regions of each frame to compute the metric
+    """
     pass
 
 class SSIMULACRA2Implementation(Enum):
-    ZIG = 'zig'
+    CPU = 'cpu'
     CUDA = 'cuda'
     HIP = 'hip'
 
 class SSIMULACRA2Metric(Metric):
+    """
+    SSIMULACRA2 - Structural SIMilarity Unveiling Local And Compression Related Artifacts ([SSIMULACRA2](https://github.com/cloudinary/ssimulacra2))
+
+    Multiple implementations are available: CPU, CUDA and HIP.
+    CUDA and HIP require a compatible Graphics Processing Unit (GPU) and the [VapourSynth-HIP](https://github.com/Line-fr/Vship) plugin to be installed.
+    CPU requires either the [vapoursynth-julek-plugin](https://github.com/dnjulek/vapoursynth-julek-plugin) or [VapourSynth Zig Image Process](https://github.com/dnjulek/vapoursynth-zip) plugin to be installed.
+
+    Attributes
+    ---
+        regions: MetricRegions | None
+            The regions of each frame to compute the metric
+        implementation: SSIMULACRA2Implementation
+            The implementation to use for the metric. Can be CUDA, HIP, or CPU.
+    """
     implementation: SSIMULACRA2Implementation | None
 
-    def __init__(self, implementation: SSIMULACRA2Implementation | None,  region: MetricRegions | None = None):
-        super().__init__(region)
+    def __init__(self, implementation: SSIMULACRA2Implementation | None,  regions: MetricRegions | None = None):
+        super().__init__(regions)
         match implementation:
-            case SSIMULACRA2Implementation.ZIG.value:
-                self.implementation = SSIMULACRA2Implementation.ZIG
+            case SSIMULACRA2Implementation.CPU.value:
+                self.implementation = SSIMULACRA2Implementation.CPU
             case SSIMULACRA2Implementation.CUDA.value:
                 self.implementation = SSIMULACRA2Implementation.CUDA
             case SSIMULACRA2Implementation.HIP.value:
@@ -220,18 +278,71 @@ class SSIMULACRA2Metric(Metric):
                 self.implementation = None
 
 class VMAFMetric(Metric):
+    """
+    [VMAF](https://github.com/Netflix/vmaf) - Video Multimethod Assessment Fusion (VMAF)
+
+    Attributes
+    ---
+        regions: MetricRegions | None
+            The regions of each frame to compute the metric
+    """
     pass
 
+class ButteraugliImplementation(Enum):
+    CUDA = 'cuda'
+    HIP = 'hip'
+    CPU = 'cpu'
+
 class ButteraugliMetric(Metric):
+    """
+    [Butteraugli](https://github.com/google/butteraugli) (Butteraugli)
+
+    Multiple implementations are available: CUDA, HIP and CPU.
+    CUDA and HIP require a compatible Graphics Processing Unit (GPU) and the [VapourSynth-HIP](https://github.com/Line-fr/Vship) plugin to be installed.
+    CPU requires the [vapoursynth-julek-plugin](https://github.com/dnjulek/vapoursynth-julek-plugin) plugin to be installed.
+    If the [VapourSynth-HIP](https://github.com/Line-fr/Vship) plugin is not available, the implementation will be set to CPU.
+    VapourSynth-HIP returns results in 2Norm, 3Norm, and INFNorm. Currently, it is set to return results in INFNorm.
+    CPU only returns results in INFNorm.
+
+    Attributes
+    ---
+        regions: MetricRegions | None
+            The regions of each frame to compute the metric
+        implementation: ButteraugliImplementation
+            The implementation to use for the metric. Can be CUDA, HIP, or CPU.
+        intensity_target: int | None
+            The viewing condition in nits 
+        linput: bool | None
+            Whether to use linear input (only applicable to CPU implementation)
+    """
     intensity_target: int | None
     linput: bool | None
 
-    def __init__(self, region: MetricRegions | None = None, intensity_target: int | None = None, linput: bool | None = None):
-        super().__init__(region)
+    def __init__(self, regions: MetricRegions | None = None, implementation: ButteraugliImplementation | None = None, intensity_target: int | None = None, linput: bool | None = None):
+        super().__init__(regions)
+
+        match implementation:
+            case ButteraugliImplementation.CUDA.value:
+                self.implementation = ButteraugliImplementation.CUDA
+            case ButteraugliImplementation.HIP.value:
+                self.implementation = ButteraugliImplementation.HIP
+            case ButteraugliImplementation.CPU.value:
+                self.implementation = ButteraugliImplementation.CPU
+            case _:
+                self.implementation = None
+
         self.intensity_target = intensity_target
         self.linput = linput
 
 class XPSNRMetric(Metric):
+    """
+    Extended Peak Signal to Noise Ratio (XPSNR)
+
+    Attributes
+    ---
+        regions: MetricRegions | None
+            The regions of each frame to compute the metric
+    """
     pass
 
 # endregion Metrics
@@ -252,10 +363,26 @@ class SceneFrames:
     start: int
     end: int
 
-@dataclass(frozen=True)
+@dataclass
+class ButteraugliValue:
+    Norm2: float
+    Norm3: float
+    InifiniteNorm: float
+
+@dataclass
 class MetricScore:
+    """
+    Region scores for a single frame, when they were fully calculated, and the total time it took to calculate them
+
+    Attributes
+    ----------
+        time: datetime.datetime
+            Datetime when the score was calculated
+        value: list[list[float | ButteraugliValue | None]]
+            2D array of region scores, where the first dimension is the row and the second dimension is the column
+    """
     time: datetime.datetime
-    value: list[list[float]]
+    value: list[list[float | ButteraugliValue | None]]
 
 @dataclass(frozen=True)
 class SceneFramesWithScores(SceneFrames):
@@ -379,10 +506,14 @@ def deserialize_config(json_path: str) -> Configuration:
                         MetricType[metric]: [
                             MetricScore(
                                 time=datetime.datetime.fromisoformat(score['time']),
-                                value=score['value']
+                                value=[
+                                    [
+                                        column if isinstance(column, float) else ButteraugliValue(**column)
+                                        for column in row
+                                    ] for row in score['value']
+                                ]
                             ) for score in value['scores'][metric]
-                        ]
-                        for metric in value['scores']
+                        ] for metric in value['scores']
                     }
                 ) for key, value in scene['distorted'].items()
             }
@@ -434,8 +565,8 @@ class ConfigurationEncoder(json.JSONEncoder):
             if isinstance(v, dict):
                 d[k] = self.filter_none(v)
             elif isinstance(v, list):
-                d[k] = [self.filter_none(i) if isinstance(i, dict) else i for i in v]
-        return {k: v for k, v in d.items() if v != {} and v != []}
+                d[k] = [self.filter_none(i) if isinstance(i, dict) else i for i in v if i is not None]
+        return {k: v for k, v in d.items() if v != {}}
 
 def serialize_config(config: Configuration) -> str:
     def serialize_keys(obj: Any) -> Any:
@@ -617,103 +748,68 @@ def crop_video_regions(video: vapoursynth.VideoNode, rows: int, columns: int) ->
         )
     ]], range(rows), [])
 
-def compare_video(reference: vapoursynth.VideoNode, distorted: vapoursynth.VideoNode, metric: Metric, score_frame: Callable[[int, MetricScore], None]) -> list[MetricScore]:
+def retrieve_score(frame: vapoursynth.VideoFrame, metric: Metric) -> float | ButteraugliValue:
+    if (isinstance(metric, PSNRMetric)):
+        return frame.props['PSNR'] if 'PSNR' in frame.props else None # type: ignore
+    elif (isinstance(metric, ButteraugliMetric)):
+        if (metric.implementation == ButteraugliImplementation.CUDA or metric.implementation == ButteraugliImplementation.HIP):
+            return ButteraugliValue(frame.props['_BUTTERAUGLI_2Norm'], frame.props['_BUTTERAUGLI_3Norm'], frame.props['_BUTTERAUGLI_INFNorm']) # type: ignore
+        else:
+            return ButteraugliValue(0, 0, frame.props['_FrameButteraugli']) # type: ignore
+    elif (isinstance(metric, SSIMULACRAMetric)):
+        return frame.props['_SSIMULACRA'] if '_SSIMULACRA' in frame.props else None # type: ignore
+    elif (isinstance(metric, SSIMULACRA2Metric)):
+        return frame.props['_SSIMULACRA2'] if '_SSIMULACRA2' in frame.props else None # type: ignore
+    elif (isinstance(metric, XPSNRMetric)):
+        return frame.props['_XPSNR'] if '_XPSNR' in frame.props else None or None # type: ignore
+    else:
+        raise ValueError(f'Unknown metric: {metric}')
+
+def compare_region(reference: vapoursynth.VideoNode, distorted: vapoursynth.VideoNode, metric: Metric) -> vapoursynth.VideoNode:
     global installed
-
-    def retrieve_score(frame: vapoursynth.VideoFrame) -> float:
-        if (isinstance(metric, PSNRMetric)):
-            return frame.props['PSNR'] or 0 # type: ignore
-        elif (isinstance(metric, ButteraugliMetric)):
-            return frame.props['_FrameButteraugli'] or 0 # type: ignore
-        elif (isinstance(metric, SSIMULACRAMetric)):
-            return frame.props['_SSIMULACRA'] or 0 # type: ignore
-        elif (isinstance(metric, SSIMULACRA2Metric)):
-            return frame.props['_SSIMULACRA2'] or 0 # type: ignore
-        elif (isinstance(metric, XPSNRMetric)):
-            return frame.props['_XPSNR'] or 0 # type: ignore
-        else:
-            raise ValueError(f'Unknown metric: {metric}')
-
-    def compare(comparer: Callable[[vapoursynth.VideoNode, vapoursynth.VideoNode], vapoursynth.VideoNode]):
-        scores: list[MetricScore] = []
-
-        if (metric.regions is not None):
-            reference_regions = crop_video_regions(reference, metric.regions.rows, metric.regions.columns)
-            distorted_regions = crop_video_regions(distorted, metric.regions.rows, metric.regions.columns)
-
-            # Frame-Optimized "Depth-First" - iterate over each frame, then each region, then each row, column by column
-            # Flatten the 3D list into a 1D "list" - improves VapourSynth performance by avoiding single-threaded processing
-            score_grids = [[[float(0) for _ in range(metric.regions.columns)] for _ in range(metric.regions.rows)] for _ in range(reference.num_frames)]
-            reference_frames = core.std.Splice([reference_regions[row][column][frame_index] for column in range(metric.regions.columns) for row in range(metric.regions.rows) for frame_index in range(reference.num_frames)])
-            distorted_frames = core.std.Splice([distorted_regions[row][column][frame_index] for column in range(metric.regions.columns) for row in range(metric.regions.rows) for frame_index in range(distorted.num_frames)])
-
-            for region_index, region_frame in enumerate(comparer(reference_frames, distorted_frames).frames()):
-                # Calculate row, column, and frame from region_index
-                frame = region_index // (metric.regions.rows * metric.regions.columns)
-                column = (region_index // metric.regions.rows) % metric.regions.columns
-                row = region_index % metric.regions.rows
-                score_grids[frame][row][column] = retrieve_score(region_frame)
-
-                # Last row and column in frame completed
-                if (row == metric.regions.rows - 1 and column == metric.regions.columns - 1):
-                    metric_score = MetricScore(time=datetime.datetime.now(), value=score_grids[frame])
-                    scores.append(metric_score)
-                    score_frame(frame, metric_score)
-        else:
-            for index, frame in enumerate(comparer(reference, distorted).frames()):
-                score = retrieve_score(frame)
-                metric_score = MetricScore(time=datetime.datetime.now(), value=[[score]])
-                scores.append(metric_score)
-                score_frame(index, metric_score)
-
-        return scores
 
     if (isinstance(metric, PSNRMetric)):
         if (not installed[Library.VMAF]):
-            return [MetricScore(time=datetime.datetime.now(), value=[[0]])] * len(reference)
-
-        return compare(lambda ref, dist: ref.vmaf.Metric(dist, feature=0))
+            return reference
+        return reference.vmaf.Metric(distorted, feature=0)
     elif (isinstance(metric, ButteraugliMetric)):
-        if (not installed[Library.Julek]):
-            return [MetricScore(time=datetime.datetime.now(), value=[[0]])] * len(reference)
-        
-        return compare(lambda ref, dist: ref.julek.Butteraugli(dist, intensity_target=metric.intensity_target, linput=metric.linput))
+        if (not installed[Library.VSHIP] and not installed[Library.Julek]):
+            print('Butteraugli requires either vship or julek to be installed')
+            return reference
+
+        if ((metric.implementation == ButteraugliImplementation.CUDA or metric.implementation == ButteraugliImplementation.HIP) and installed[Library.VSHIP]):
+            # vship.Butteraugli requires RGBS and linear transfer
+            ref = reference.resize.Bicubic(format=vapoursynth.RGBS, matrix_in_s='709')
+            dist = distorted.resize.Bicubic(format=vapoursynth.RGBS, matrix_in_s='709')
+            return ref.vship.BUTTERAUGLI(dist, metric.intensity_target)
+
+        return reference.julek.Butteraugli(distorted, intensity_target=metric.intensity_target, linput=metric.linput)
     elif (isinstance(metric, SSIMULACRAMetric)):
         if (not installed[Library.Julek]):
-            return [MetricScore(time=datetime.datetime.now(), value=[[0]])] * len(reference)
+            return reference
 
-        def callback(ref: vapoursynth.VideoNode, dist: vapoursynth.VideoNode) -> vapoursynth.VideoNode:
-            # julek.SSIMULACRA requires RGB24
-            return ref.resize.Bicubic(format=vapoursynth.RGB24, matrix_in_s='709').julek.SSIMULACRA(dist.resize.Bicubic(format=vapoursynth.RGB24, matrix_in_s='709'), feature=0)
-
-        return compare(callback)
+        # julek.SSIMULACRA requires RGB24
+        return reference.resize.Bicubic(format=vapoursynth.RGB24, matrix_in_s='709').julek.SSIMULACRA(distorted.resize.Bicubic(format=vapoursynth.RGB24, matrix_in_s='709'), feature=1)
     elif (isinstance(metric, SSIMULACRA2Metric)):
         if (not installed[Library.VSHIP] and not installed[Library.VSZip] and not installed[Library.SSIMULACRA2_ZIG]):
             print('SSIMULACRA2 requires either vship, vszip, or ssimulacra2-zig to be installed')
-            return [MetricScore(time=datetime.datetime.now(), value=[[0]])] * len(reference)
+            return reference
 
-        def callback(ref: vapoursynth.VideoNode, dist: vapoursynth.VideoNode) -> vapoursynth.VideoNode:
-            # vship.SSIMULACRA2 requires RGBS and linear transfer
-            if ((metric.implementation == SSIMULACRA2Implementation.CUDA or metric.implementation == SSIMULACRA2Implementation.HIP) and installed[Library.VSHIP]):
-                ref = ref.resize.Bicubic(format=vapoursynth.RGBS, matrix_in_s='709')
-                dist = dist.resize.Bicubic(format=vapoursynth.RGBS, matrix_in_s='709')
-            
-            
-            return ref.vship.SSIMULACRA2(dist) if ((metric.implementation == SSIMULACRA2Implementation.CUDA or metric.implementation == SSIMULACRA2Implementation.HIP) and installed[Library.VSHIP]) else ref.vszip.Metrics(dist, mode=0) if installed[Library.VSZip] else ref.ssimulacra2.SSIMULACRA2(dist)
-
-        return compare(callback)
+        # vship.SSIMULACRA2 requires RGBS and linear transfer
+        if ((metric.implementation == SSIMULACRA2Implementation.CUDA or metric.implementation == SSIMULACRA2Implementation.HIP) and installed[Library.VSHIP]):
+            reference = reference.resize.Bicubic(format=vapoursynth.RGBS, matrix_in_s='709')
+            distorted = distorted.resize.Bicubic(format=vapoursynth.RGBS, matrix_in_s='709')
+        
+        
+        return reference.vship.SSIMULACRA2(distorted) if ((metric.implementation == SSIMULACRA2Implementation.CUDA or metric.implementation == SSIMULACRA2Implementation.HIP) and installed[Library.VSHIP]) else reference.vszip.Metrics(distorted, mode=0) if installed[Library.VSZip] else reference.ssimulacra2.SSIMULACRA2(distorted)
     elif (isinstance(metric, XPSNRMetric)):
         if (not installed[Library.VSZip]):
-            return [MetricScore(time=datetime.datetime.now(), value=[[0]])] * len(reference)
+            return reference
 
-        return compare(lambda ref, dist: ref.vszip.Metrics(dist, mode=1))
+        return reference.vszip.Metrics(distorted, mode=1)
     else:
         print(f'Unsupported metric: {metric}')
-        return [MetricScore(time=datetime.datetime.now(), value=[[0]])] * len(reference)
-
-def compare_frame(reference: vapoursynth.VideoNode, distorted: vapoursynth.VideoNode, metric: Metric, score_frame: Callable[[int, MetricScore], None] = lambda index, score: None) -> MetricScore:
-    scores = compare_video(reference, distorted, metric, score_frame)
-    return scores[0]
+        return reference
 
 def get_installed_plugins() -> Dict[Library, bool]:
     installed = {
@@ -727,8 +823,7 @@ def count_scene_unscored_frames(scene: Scene) -> int:
         _distorted_id, distorted = distorted_tuple
         scene_frame_count = distorted.end - distorted.start
         for _metric_type, scores in distorted.scores.items():
-            if (len(scores) == 0):
-                unscored_frames = unscored_frames + scene_frame_count
+            unscored_frames = unscored_frames + (scene_frame_count - len(scores))
     return unscored_frames
 
 def calculate_metric_scores_average(metric_scores: list[MetricScore]) -> float:
@@ -741,7 +836,8 @@ def calculate_metric_scores_average(metric_scores: list[MetricScore]) -> float:
             subtotal = 0
             for row in metric_score.value:
                 for column in row:
-                    subtotal = subtotal + column
+                    if column is not None:
+                            subtotal = subtotal + column.InifiniteNorm if isinstance(column, ButteraugliValue) else column
             
             subaverage = subtotal / (len(metric_score.value) * len(metric_score.value[0]))
             total = total + subaverage
@@ -783,6 +879,7 @@ if (config.threads and config.threads > 0):
     core.num_threads = config.threads
 
 # Import each video file with the respective selected importer if available
+print(f'Importing reference video: {config.reference.path}')
 reference_video = import_video(config.reference.path, config.reference.importMethods)
 distorted_map: Dict[str, vapoursynth.VideoNode] = {}
 
@@ -791,6 +888,7 @@ if (config.reference.scale is not None):
     reference_video = reference_video.resize.Bicubic(width=config.reference.scale.width, height=config.reference.scale.height)
 
 for key, value in config.distorted.items():
+    print(f'Importing distorted video: {value.path}')
     distorted_map[key] = import_video(value.path, value.importMethods)
 
     # Scale distorted video if defined otherwise scale to match the dimensions of the reference video
@@ -800,49 +898,90 @@ for key, value in config.distorted.items():
 comparison_start_time = time.time()
 total_unscored_frames = reduce(lambda total, scene: total + count_scene_unscored_frames(scene), config.scenes, 0)
 
-# Compare each scene
-for scene_index, scene in enumerate(config.scenes):
-    # Separate into individual frames
-    frame_count = scene.reference.end - scene.reference.start
-    scene_start_time = time.time()
+async def process_region(compared_regions: List[List[vapoursynth.VideoNode]], scene_frame_index: int, row_index: int, column_index: int, metric_type: MetricType) -> Tuple[float | ButteraugliValue, int, int]:
+    def retrieve_region(region: vapoursynth.VideoNode) -> vapoursynth.VideoFrame:
+        return region.get_frame_async(scene_frame_index).result()
 
-    for distorted_id, distorted in scene.distorted.items():
-        # Get the imported distorted video
-        distorted_video = distorted_map[distorted_id]
-        # Compare each distorted frame with the reference frame and store the score for each metric
-        for metric_type, scores in distorted.scores.items():
-            # Skip frames that have already been compared
-            if (len(scores) > 0):
-                continue
+    region = await to_thread(retrieve_region, compared_regions[row_index][column_index])
+    score = retrieve_score(region, config.metrics[metric_type])
+    return (score, row_index, column_index)
 
-            def score_frame(frame_index: int, score: MetricScore):
-                if config.output.console:
-                    score_report = ScoreReport(
-                        scene=scene_index,
-                        distortedId=distorted_id,
-                        frame=frame_index,
-                        metric=metric_type,
-                        score=score
-                    )
+async def process_frame(compared_regions: List[List[vapoursynth.VideoNode]], scene_index: int, distorted_id: str, metric_type: MetricType, scene_frame_index: int):
+    scene = config.scenes[scene_index]
+    metric = config.metrics[metric_type]
+    rows = metric.regions.rows if metric.regions is not None else 1
+    columns = metric.regions.columns if metric.regions is not None else 1
 
-                    print(f'SCORE: {serialize_score_report(score_report)}', flush=True)
+    start_time = datetime.datetime.now()
+    results = await gather(*[process_region(compared_regions, scene_frame_index, row_index, column_index, metric_type) for row_index in range(rows) for column_index in range(columns)])
+    end_time = datetime.datetime.now()
 
-            metric = config.metrics[metric_type]
+    if (len(config.scenes[scene_index].distorted[distorted_id].scores[metric_type]) == 0):
+        # Initialize the score array with empty/placeholder values
+        config.scenes[scene_index].distorted[distorted_id].scores[metric_type] = [
+            MetricScore(
+                time=end_time,
+                value=[[None for _ in range(columns)] for _ in range(rows)]
+            ) for _ in range(scene.reference.end - scene.reference.start)
+        ]
 
-            # Compare the distorted frame against the reference frame
-            config.scenes[scene_index].distorted[distorted_id].scores[metric_type] = compare_video(reference_video[scene.reference.start:scene.reference.end], distorted_video[distorted.start:distorted.end], metric, score_frame)
+    config.scenes[scene_index].distorted[distorted_id].scores[metric_type][scene_frame_index].time = end_time
+    for score, row_index, column_index in results:
+        config.scenes[scene_index].distorted[distorted_id].scores[metric_type][scene_frame_index].value[row_index][column_index] = score
 
-            # Scoring done for this metric
-            scene_metric_end_time = time.time()
-            scene_metric_fps = len(config.scenes[scene_index].distorted[distorted_id].scores[metric_type]) / (scene_metric_end_time - scene_start_time)
+    # Update MetricScore with final values
+    score_report = ScoreReport(
+                scene=scene_index,
+                distortedId=distorted_id,
+                frame=scene_frame_index,
+                metric=metric_type,
+                score=config.scenes[scene_index].distorted[distorted_id].scores[metric_type][scene_frame_index],
+            )
 
-            average = calculate_metric_scores_average(config.scenes[scene_index].distorted[distorted_id].scores[metric_type])
-            if (config.output.verbose):
-                print(f'[{datetime.datetime.now().isoformat()}] Scene {scene_index} (Distorted {distorted_id}): {metric_type.value}: {average:.2f} | ({scene_metric_fps:.2f} FPS)')
+    if config.output.console:
+        print(f'SCORE: {serialize_score_report(score_report)}', flush=True)
 
-            new_json = serialize_config(config)
-            with open(config.output.path or config_path, 'w') as f:
-                f.write(new_json)
+    return score_report
+
+async def process_metric(scene_index: int, distorted_id: str, metric_type: MetricType):
+    tasks: List[Task[ScoreReport]] = []
+    scene_length = config.scenes[scene_index].distorted[distorted_id].end - config.scenes[scene_index].distorted[distorted_id].start
+    metric = config.metrics[metric_type]
+    metric_scores = config.scenes[scene_index].distorted[distorted_id].scores[metric_type]
+    rows = metric.regions.rows if metric.regions is not None else 1
+    columns = metric.regions.columns if metric.regions is not None else 1
+    reference_regions = crop_video_regions(reference_video[config.scenes[scene_index].reference.start:config.scenes[scene_index].reference.end], rows, columns)
+    distorted_regions = crop_video_regions(distorted_map[distorted_id][config.scenes[scene_index].distorted[distorted_id].start:config.scenes[scene_index].distorted[distorted_id].end], rows, columns)
+    compared_regions = [
+        [
+            compare_region(reference_regions[row_index][column_index], distorted_regions[row_index][column_index], metric) for column_index in range(columns)
+        ]
+        for row_index in range(rows)
+    ]
+
+    for scene_frame_index in range(scene_length):
+        if (scene_frame_index >= len(metric_scores) or metric_scores[scene_frame_index].value is None):
+            task = create_task(process_frame(compared_regions, scene_index, distorted_id, metric_type, scene_frame_index))
+            tasks.append(task)
+
+    await gather(*tasks)
+
+    # Save progress
+    new_json = serialize_config(config)
+    with open(config.output.path or config_path, 'w') as f:
+        f.write(new_json)
+
+async def main():
+    await gather(
+        *[
+            process_metric(scene_index, distorted_id, metric_type)
+            for scene_index in range(len(config.scenes))
+            for distorted_id in config.scenes[scene_index].distorted.keys()
+            for metric_type in config.scenes[scene_index].distorted[distorted_id].scores.keys()
+        ]
+    )
+
+run(main())
 
 if config.output.verbose:
     comparison_end_time = time.time()
