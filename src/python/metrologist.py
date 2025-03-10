@@ -401,7 +401,6 @@ class Wamp:
 @dataclass(frozen=True)
 class Output:
     path: str | None
-    wamp: Wamp | None
     console: bool | None
     verbose: bool | None
 
@@ -508,7 +507,7 @@ def deserialize_config(json_path: str) -> Configuration:
                                 time=datetime.datetime.fromisoformat(score['time']),
                                 value=[
                                     [
-                                        column if isinstance(column, float) else ButteraugliValue(**column)
+                                        column if (isinstance(column, float) or isinstance(column, int) or column is None) else ButteraugliValue(**column)
                                         for column in row
                                     ] for row in score['value']
                                 ]
@@ -522,7 +521,6 @@ def deserialize_config(json_path: str) -> Configuration:
 
     output = Output(
         path=data['output']['path'],
-        wamp=Wamp(**data['output']['wamp']),
         console=data['output']['console'] if 'console' in data['output'] else True,
         verbose=data['output']['verbose'] if 'verbose' in data['output'] else False,
     )

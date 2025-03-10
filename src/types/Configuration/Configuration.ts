@@ -57,9 +57,7 @@ export interface Scene {
     reference: SceneFrames;
     distorted: {
         [id: string]: SceneFrames & {
-            scores: { 
-                [P in keyof typeof MetricType]?: SceneFrameScores<P extends typeof MetricType.Butteraugli ? ButteraugliValue : MetricValue>[];
-            };
+            scores: Partial<Record<MetricType, SceneFrameScores[]>>;
         };
     };
 }
@@ -73,14 +71,6 @@ export interface Output {
      * Defaults to `config.json` in the same directory as the reference video
      */
     path?: string;
-
-    /**
-     * WAMP configuration
-     */
-    wamp?: {
-        host: string & tags.Format<'uri'>;
-        realm: string;
-    };
 
     /**
      * Whether to print the results to the console
@@ -117,7 +107,7 @@ export interface Configuration<T extends 'Set' | 'Array' = 'Set'> {
      * Metrics to use and their parameters
      */
     metrics: {
-        [P in keyof typeof MetricType]?: Metric<P>;
+        [P in MetricType]?: Metric<P>;
     };
 
     /**

@@ -10,11 +10,12 @@ node_modules/
 coverage
 
 # Local
-src/*.local.*
+src/**/*.local.*
 
 # Transpiled files
 build/
 dist/
+**/*.tsbuildinfo
 
 # VS Code
 .vscode

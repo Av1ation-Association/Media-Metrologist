@@ -20,15 +20,22 @@ import {
     MetricType,
     type MetricValue,
     type ButteraugliValue,
+    type BaseMetric,
+    type SSIMULACRA2Metric,
+    type ButteraugliMetric,
 } from './types/Configuration/Metric.js';
 import {
+    type MetrologistEvent,
     type Status,
     type ScoringStatus,
     type ErrorStatus,
     State,
 } from './types/Status.js';
 
-export type MetrologistEvent = Record<typeof State[keyof typeof State], [Status]> & { status: [Status] };
+export * from './types/Configuration/Configuration.js';
+export * from './types/Configuration/Import.js';
+export * from './types/Configuration/Metric.js';
+export * from './types/Status.js';
 
 export class Metrologist extends EventEmitter<MetrologistEvent> {
     private childProcess?: ChildProcessByStdio<Writable | null, Readable, Readable | null>;
@@ -43,7 +50,7 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                 distorted[id] = {
                     ...distortedConfig,
                     scores: Object.entries(distortedConfig.scores).reduce((scores, [metric, score]) => {
-                        scores[metric] = score.map(sceneFrameScore => ({
+                        scores[metric as MetricType] = score.map(sceneFrameScore => ({
                             ...sceneFrameScore,
                             time: new Date(sceneFrameScore.time),
                         }));
@@ -74,7 +81,7 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                                     distortedId,
                                     sceneIndex,
                                     frameIndex: index,
-                                    metric: MetricType[metric],
+                                    metric: metric as MetricType,
                                     score: score.value,
                                 });
                             });
@@ -115,7 +122,7 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                         formattedDistorted[id] = {
                             ...distorted,
                             scores: Object.entries(distorted.scores).reduce((scores, [metric, score]) => {
-                                scores[metric] = Array.from((score as unknown as number[]) ?? []);
+                                scores[metric as MetricType] = Array.from(score ?? []);
                                 return scores;
                             }, {} as Configuration<'Array'>['scenes'][0]['distorted'][0]['scores']),
                         };
@@ -139,11 +146,12 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
 
 
             return config;
-        } catch (error) {
+        } catch {
             throw new Error('Invalid config file');
         }
     }
-    
+
+    // TODO: Move to tests
     public static GenerateRandomConfiguration() {
         // Metrics contains empty objects by design and requires special handling
         // TODO: Ensure scenes start and end are valid
@@ -156,23 +164,23 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
             metrics: typia.random<(keyof typeof MetricType)[] & tags.UniqueItems>().reduce((metricObject, metric) => {
                 switch (metric) {
                     case MetricType.SSIMULACRA2:
-                        metricObject[metric] = typia.random<Pick<Configuration['metrics'], 'SSIMULACRA2'>>() ?? {};
+                        metricObject.SSIMULACRA2 = typia.random<SSIMULACRA2Metric>() ?? {};
                         break;
                     case MetricType.Butteraugli:
-                        metricObject[metric] = typia.random<Pick<Configuration['metrics'], 'Butteraugli'>>() ?? {};
+                        metricObject.Butteraugli = typia.random<ButteraugliMetric>() ?? {};
                         break;
                     default:
-                        metricObject[metric] = {};
+                        metricObject[metric as Exclude<MetricType, 'SSIMULACRA2' | 'Butteraugli'>] = typia.random<BaseMetric>() ?? {};
                         break;
                 }
                 return metricObject;
-            }, {}),
+            }, {} as Configuration['metrics']),
             scenes: typia.random<Configuration['scenes']>(),
             ...(output && { output }),
             ...(threads && { threads }),
         } as Configuration;
     }
-    
+
     public static CalculateTotalFrames(config: Configuration) {
         const frames = config.scenes.reduce((sceneFrameTotal, scene) => {
             // Frames per scene for all encoded inputs
@@ -180,7 +188,7 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                 return frameTotal + Object.keys(distorted.scores).length * (distorted.end - distorted.start);
             }, 0);
         }, 0);
-    
+
         return frames;
     }
 
@@ -219,25 +227,25 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
             const average = scores.reduce((sum, score) => sum + score, 0) / scores.length;
             const minimum = Math.min(...scores.map(score => score));
             const maximum = Math.max(...scores.map(score => score));
-        
+
             // Calculate the squared differences between each score and the average
             const squaredDifferences = scores.map(score => Math.pow(score - average, 2));
             // Calculate the average of the squared differences
             const averageSquaredDifference = squaredDifferences.reduce((sum, difference) => sum + difference, 0) / scores.length;
             // Calculate the standard deviation by taking the square root of the average squared difference
             const standardDeviation = Math.sqrt(averageSquaredDifference);
-        
+
             const sortedScores = scores.sort((a, b) => a - b);
-        
+
             function calculatePercentile(percentile: number) {
                 const index = (percentile / 100) * (sortedScores.length - 1);
                 const lowerIndex = Math.floor(index);
                 const upperIndex = Math.ceil(index);
-                const lower = sortedScores[lowerIndex];
-                const upper = sortedScores[upperIndex];
+                const lower = sortedScores[lowerIndex] ?? 0;
+                const upper = sortedScores[upperIndex] ?? 0;
                 return lowerIndex === upperIndex ? sortedScores[lowerIndex] : lower + (upper - lower) * (index - lowerIndex);
             }
-        
+
             return {
                 average,
                 minimum,
@@ -273,7 +281,13 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                             return score.value;
                         }
                     });
-                    
+
+                    if (!metricScenesMap[distortedId]) {
+                        metricScenesMap[distortedId] = {};
+                    }
+                    if (!metricScenesMap[distortedId][metric]) {
+                        metricScenesMap[distortedId][metric] = [];
+                    }
                     metricScenesMap[distortedId][metric].push(scenesScores);
                 });
             });
@@ -299,7 +313,7 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                             median: generatedStatistics.percentile(50),
                             percentile1: generatedStatistics.percentile(1),
                             percentile5: generatedStatistics.percentile(5),
-                        };
+                        } as SceneStatistics;
                     }),
                     statistics: {
                         scores: allScores,
@@ -310,24 +324,20 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
                         median: generateStatistics(allScores).percentile(50),
                         percentile1: generateStatistics(allScores).percentile(1),
                         percentile5: generateStatistics(allScores).percentile(5),
-                    },
+                    } as SceneStatistics,
                 };
             });
             return result;
         }, {} as { [distortedId: string]: { [metric: string]: { scenes: SceneStatistics[]; statistics: SceneStatistics; } } });
     }
 
-    // public static CalculateSceneStatistics(config: SceneFrameScores) {
-        
-    // }
-
-    public static CalculateFramerate(config: Configuration, metric?: keyof typeof MetricType) {
+    public static CalculateFramerate(config: Configuration, metric?: MetricType) {
         const frameTimes = config.scenes
             .reduce((frameTimes, scene) => {
                 Object.values(scene.distorted).forEach((distorted) => {
-                    Object.entries(distorted.scores).forEach(([sceneMetric, scores]: [metric: keyof typeof MetricType, scores: SceneFrameScores[]]) => {
+                    Object.entries(distorted.scores).forEach(([sceneMetric, scores]) => {
                         if (!metric || sceneMetric === metric) {
-                            frameTimes = frameTimes.concat(scores.map(score => score.time));
+                            frameTimes = frameTimes.concat(scores.filter(score => !!score).map(score => score.time));
                         }
                     });
                 });
@@ -336,7 +346,9 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
             }, [] as Date[])
             .sort((a, b) => a.getTime() - b.getTime());
 
-        const totalSeconds = (frameTimes[frameTimes.length - 1].getTime() - frameTimes[0].getTime()) / 1000;
+        const lastFrameTime = frameTimes[frameTimes.length - 1]?.getTime();
+        const firstFrameTime = frameTimes[0]?.getTime();
+        const totalSeconds = frameTimes.length > 1 && lastFrameTime && firstFrameTime ? (lastFrameTime - firstFrameTime) / 1000 : 0;
 
         return frameTimes.length / totalSeconds;
     }
@@ -368,13 +380,14 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
         } as Status;
         this.statuses.push(newStatus);
         this.emit('status', newStatus);
-        this.emit(status.state, newStatus);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.emit(status.state, newStatus as any);
     }
 
     public async measure() {
         // Write config file to disk
         await fsp.writeFile(this.configPath, JSON.stringify(Metrologist.Serialize(this.config), null, 4));
-        
+
         return new Promise<Configuration>((resolve, reject) => {
             // Run metrologist
             this.childProcess = spawn(
@@ -410,19 +423,29 @@ export class Metrologist extends EventEmitter<MetrologistEvent> {
 
                         const time = new Date(score.time);
                         const metric = MetricType[metricType as keyof typeof MetricType];
-    
+
+                        if (sceneIndex > this.config.scenes.length) {
+                            return;
+                        }
+                        if (!this.config.scenes[sceneIndex]?.distorted[distortedId]) {
+                            return;
+                        }
                         const sceneLength = this.config.scenes[sceneIndex].distorted[distortedId].end - this.config.scenes[sceneIndex].distorted[distortedId].start;
-                        
+
                         // Add score to config
+                        if (!this.config.scenes[sceneIndex].distorted[distortedId].scores[metric]) {
+                            return;
+                        }
+
                         if (!this.config.scenes[sceneIndex].distorted[distortedId].scores[metric].length || this.config.scenes[sceneIndex].distorted[distortedId].scores[metric].length < sceneLength) {
                             this.config.scenes[sceneIndex].distorted[distortedId].scores[metric] = new Array(sceneLength).fill(undefined);
                         }
-    
+
                         this.config.scenes[sceneIndex].distorted[distortedId].scores[metric][frame] = {
                             time,
                             value: score.value,
                         } as SceneFrameScores;
-    
+
                         // Add new status with the state 'scoring'
                         this.addStatus({
                             time,

@@ -3,10 +3,8 @@ import { type MetricType } from './Configuration/Metric.js';
 export const State = {
     'Idle': 'idle',
     'Running': 'running',
-    'Connected': 'connected',
     'Scoring': 'scoring',
     'Done': 'done',
-    'Disconnected': 'disconnected',
     'Canceled': 'canceled',
     'Error': 'error',
 } as const;
@@ -16,16 +14,44 @@ interface BaseStatus {
     state: typeof State[keyof typeof State];
 }
 
+export type Status = IdleStatus | RunningStatus | ScoringStatus | DoneStatus | CanceledStatus | ErrorStatus;
+
+export interface IdleStatus extends BaseStatus {
+    state: typeof State.Idle;
+}
+
+export interface RunningStatus extends BaseStatus {
+    state: typeof State.Running;
+}
+
 export interface ScoringStatus extends BaseStatus {
+    state: typeof State.Scoring;
     sceneIndex: number;
     distortedId: string;
-    metric: typeof MetricType[keyof typeof MetricType];
+    metric: MetricType;
     frameIndex: number;
-    score: number | number[][];
+    score: number[][];
+}
+
+export interface DoneStatus extends BaseStatus {
+    state: typeof State.Done;
+}
+
+export interface CanceledStatus extends BaseStatus {
+    state: typeof State.Canceled;
 }
 
 export interface ErrorStatus extends BaseStatus {
+    state: typeof State.Error;
     error: Error;
 }
 
-export type Status = BaseStatus | ScoringStatus | ErrorStatus;
+export interface MetrologistEvent {
+    status: Status[];
+    idle: IdleStatus[];
+    running: RunningStatus[];
+    scoring: ScoringStatus[];
+    done: DoneStatus[];
+    canceled: CanceledStatus[];
+    error: ErrorStatus[];
+};

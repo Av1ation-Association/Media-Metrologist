@@ -1,12 +1,21 @@
 import { type tags } from 'typia';
-export const MetricType = {
-    PSNR: 'PSNR' as 'PSNR' & tags.Constant<string, { title: 'PSNR', description: 'Peak Signal to Noise Ratio' }>,
-    SSIMULACRA: 'SSIMULACRA' as 'SSIMULACRA' & tags.Constant<string, { title: 'SSIMULACRA', description: 'Structural Similarity Index' }>,
-    SSIMULACRA2: 'SSIMULACRA2' as 'SSIMULACRA2' & tags.Constant<string, { title: 'SSIMULACRA2', description: 'Structural Similarity Index 2' }>,
-    VMAF: 'VMAF' as 'VMAF' & tags.Constant<string, { title: 'VMAF', description: 'Video Multi-Method Assessment Framework' }>,
-    Butteraugli: 'Butteraugli' as 'Butteraugli' & tags.Constant<string, { title: 'Butteraugli', description: 'Butteraugli Distance' }>,
-    XPSNR: 'XPSNR' as 'XPSNR' & tags.Constant<string, { title: 'XPSNR', description: 'Extended Peak Signal to Noise Ratio' }>,
-} as const;
+// export const MetricType = {
+//     PSNR: 'PSNR' as 'PSNR' & tags.Constant<string, { title: 'PSNR', description: 'Peak Signal to Noise Ratio' }>,
+//     SSIMULACRA: 'SSIMULACRA' as 'SSIMULACRA' & tags.Constant<string, { title: 'SSIMULACRA', description: 'Structural Similarity Index' }>,
+//     SSIMULACRA2: 'SSIMULACRA2' as 'SSIMULACRA2' & tags.Constant<string, { title: 'SSIMULACRA2', description: 'Structural Similarity Index 2' }>,
+//     VMAF: 'VMAF' as 'VMAF' & tags.Constant<string, { title: 'VMAF', description: 'Video Multi-Method Assessment Framework' }>,
+//     Butteraugli: 'Butteraugli' as 'Butteraugli' & tags.Constant<string, { title: 'Butteraugli', description: 'Butteraugli Distance' }>,
+//     XPSNR: 'XPSNR' as 'XPSNR' & tags.Constant<string, { title: 'XPSNR', description: 'Extended Peak Signal to Noise Ratio' }>,
+// } as const;
+
+export enum MetricType {
+    PSNR = 'PSNR',
+    SSIMULACRA = 'SSIMULACRA',
+    SSIMULACRA2 = 'SSIMULACRA2',
+    VMAF = 'VMAF',
+    Butteraugli = 'Butteraugli',
+    XPSNR = 'XPSNR',
+}
 
 /**
  * Represents an empty object type that cannot be assigned any properties unlike `{}` or `object`.
@@ -21,7 +30,7 @@ export type Metric<T extends keyof typeof MetricType | undefined = undefined> = 
     : T extends typeof MetricType.SSIMULACRA
     ? SSIMULACRAMetric
     : T extends typeof MetricType.SSIMULACRA2
-    ? SSIMULACRAMetric2
+    ? SSIMULACRA2Metric
     : T extends typeof MetricType.VMAF
     ? VMAFMetric
     : T extends typeof MetricType.Butteraugli
@@ -33,7 +42,7 @@ export type Metric<T extends keyof typeof MetricType | undefined = undefined> = 
 export type MetricValue = (number & tags.Type<'float'>);
 export type ButteraugliValue = { Norm2: (number & tags.Type<'float'> & tags.Minimum<0>); Norm3: (number & tags.Type<'float'> & tags.Minimum<0>); NormInfinite: (number & tags.Type<'float'> & tags.Minimum<0>); };
 
-interface BaseMetric {
+export interface BaseMetric {
     regions?: {
         rows: number & tags.Type<'int32'> & tags.Minimum<1>;
         columns: number & tags.Type<'int32'> & tags.Minimum<1>;
@@ -49,7 +58,7 @@ export const SSIMULACRA2Implementation = {
     CPU: 'cpu',
 } as const;
 
-export interface SSIMULACRAMetric2 extends BaseMetric{
+export interface SSIMULACRA2Metric extends BaseMetric {
     /**
      * Implementation to use. Can be 'cuda', 'hip', or 'cpu'. If 'cuda' or 'hip' is unavailable, 'cpu' will be used.
      * @enum {SSIMULACRA2Implementation}
